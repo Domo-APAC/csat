@@ -1,0 +1,217 @@
+# CSAT Survey for APAC Projects
+
+## Project Summary
+
+| Field | Value |
+|---|---|
+| **Project Slug** | cscat |
+| **Type** | Consulting / Internal tooling |
+| **Asana Task** | [1214079904075713](https://app.asana.com/0/1213801551934822/1214079904075713) |
+| **Asana Projects** | APAC Sprint Board (`1213801551934822`), `1213638707069525` |
+| **Owner** | Robert Gilto |
+| **Requestor** | Paul Basterfield — Senior Manager, Consulting & Partner Services, APAC |
+| **Status** | Not started — scoping |
+| **Created** | 2026-04-17 |
+| **Last Modified** | 2026-05-27 |
+| **Last E2E** | 2026-05-27 — v3 DataSet smoke + live GH Pages submit, both 200 |
+| **Due** | none set |
+
+## Goal
+
+Build web form in Domo to capture post-project customer feedback. Input feeds APAC delivery CSAT measurement. Form hosted on `domo.domo.com`.
+
+## Email Template (sent with survey link)
+
+**Subject:** We Value Your Feedback
+
+> Thank you for partnering with us on your Domo initiative. As we complete this phase of the engagement, we would greatly appreciate your feedback on both the delivery experience and the business impact of the solution.
+>
+> Your input helps us continuously improve how we design, implement, and support analytics solutions for our customers. This short survey will take less than two minutes to complete.
+>
+> We sincerely value your perspective and appreciate your time.
+>
+> Best Regards,
+> Paul Basterfield
+> Senior Manager, Consulting & Partner Services, APAC
+
+## Survey Schema
+
+| # | Question | Type | Scale / Options |
+|---|---|---|---|
+| 1 | Overall Satisfaction — How satisfied are you with the Domo engagement overall? | single-select | 5 Extremely satisfied → 1 Extremely dissatisfied |
+| 2 | Business Value — Has the delivered solution provided meaningful business value? | single-select | 5 Significant measurable value → 1 No value |
+| 3 | Alignment to Objectives — How well did the solution align with original goals/expectations? | single-select | 5 Exceeded → 1 Did not meet |
+| 4 | Delivery Experience — Project delivery experience (communication, organization, professionalism)? | single-select | 5 Excellent → 1 Poor |
+| 5 | Future Engagement — Would you engage with our team or Partner again? | single-select | Definitely / Probably / Not sure / Probably not / Definitely not |
+| 6 | Additional Feedback | open text | free text |
+
+## Working Model — Build Plan
+
+### Hosting decision
+- **Target:** Domo custom app (Pro Code / brick) embedded in App Studio page on `domo.domo.com`.
+- Alternative: native Domo Form (no-code). Custom app preferred for branding + write to AppDB + email-link token capture.
+
+### Data model (AppDB collection: `apac_csat_responses`)
+| Field | Type | Notes |
+|---|---|---|
+| `response_id` | uuid | client-generated |
+| `submitted_at` | ISO timestamp | server-side |
+| `project_name` | string | passed via URL param or selected from list |
+| `customer_account` | string | URL param |
+| `customer_contact` | string | optional, prefilled |
+| `q1_overall` | int 1-5 | required |
+| `q2_value` | int 1-5 | required |
+| `q3_alignment` | int 1-5 | required |
+| `q4_delivery` | int 1-5 | required |
+| `q5_future` | enum | Definitely/Probably/NotSure/ProbablyNot/DefinitelyNot |
+| `q6_feedback` | text | optional |
+| `submitter_email` | string | optional |
+| `nps_like_score` | int | derived: avg(q1..q4) |
+
+### App stack
+- React 18 + TypeScript + Vite + ryuu.js v6 (per `domain/domo-custom-apps.md`).
+- AppDB write via `domo.post('/domo/datastores/v1/collections/apac_csat_responses/documents/')`.
+- Manifest collection permissions: write for end-users.
+- IS_LOCAL CSV mock for dev.
+
+### Reporting layer (downstream, not part of MVP)
+- AppDB → DataSet via AppDB connector → Card: avg per question, trend by month, breakdown by project/account.
+- Dashboard for Paul.
+
+## Architecture (locked)
+
+```
+Customer email
+   └─> https://robgilto.github.io/cscat/?project=X&account=Y&contact=Z
+        (Vite + React static site, hosted on GH Pages)
+            └─> POST JSON to Domo Workflow webhook
+                 └─> Workflow appends row to DataSet `apac_csat_responses`
+                      └─> Domo card / dashboard for Paul
+```
+
+## Decisions
+
+| # | Decision | Choice |
+|---|---|---|
+| 1 | Audience | External customer contacts (Domo Everywhere acceptable but not used) |
+| 2 | Storage write path | Domo Workflow webhook → DataSet (option b/a) |
+| 3 | Hosting | GitHub Pages, public personal repo `robgilto/cscat` |
+| 4 | Webhook target | Workflow with HTTP trigger → DataSet append (Stream API action) |
+| 5 | Repo visibility | Public, personal account |
+| 6 | Domain | `robgilto.github.io/cscat/` for MVP; `csat.domo.com` CNAME later |
+| 7 | URL link generation | Manual for MVP; Asana-driven script later |
+| - | URL shortener | bit.ly free tier for clean customer-facing link |
+
+## DataSet Schema — `apac_csat_responses`
+
+| Column | Type | Notes |
+|---|---|---|
+| `response_id` | string | UUID v4 |
+| `submitted_at` | datetime | ISO timestamp, client-set |
+| `project_name` | string | from `?project=` |
+| `customer_account` | string | from `?account=` |
+| `customer_contact` | string | from `?contact=` (email) |
+| `customer_contact_name` | string | from `?contact_name=` (used in greeting) |
+| `q1_overall` | long | 1-5 |
+| `q2_value` | long | 1-5 |
+| `q3_alignment` | long | 1-5 |
+| `q4_delivery` | long | 1-5 |
+| `q5_future` | string | enum: Definitely / Probably / NotSure / ProbablyNot / DefinitelyNot |
+| `q6_feedback` | string | free text, optional |
+| `avg_score` | decimal | mean(q1..q4) |
+| `user_agent` | string | UA string |
+
+## Action Plan
+
+### Phase 1 — Code (DONE)
+- [x] Scaffold Vite + React + TS
+- [x] 6-question form with validation
+- [x] URL param capture
+- [x] Webhook POST + thank-you state
+- [x] GH Actions deploy workflow
+
+### Phase 2 — Domo backend (DONE)
+- [x] JSON Webhook Connector created (Append, no secret/flattening)
+- [x] DataSet `apac_csat_responses` v1 — ID `9c5e6633-c03f-41af-927d-748e6892c088` (DEPRECATED 2026-05-22 — schema missed `customer_contact_name`)
+- [x] DataSet `apac_csat_responses` v2 — ID `eee8618f-7a29-49b0-bb45-4357150ffd74` (DEPRECATED 2026-05-27 — connector default-template polluted schema with `source/note/timestamp/user/event` orphan cols)
+- [x] DataSet `apac_csat_responses` v3 — ID `e93fb8f0-da20-413c-b95c-2dd4a57d8d69` (created 2026-05-27, clean 14-col schema). Webhook URL rotated.
+- [x] Webhook URL captured (stored in GH secret + .env.local, NOT committed)
+- [x] curl smoke test → 200, row lands (v2 verified 2026-05-22)
+
+### Phase 3 — Deploy (DONE)
+- [x] GitHub repo `RobGilto/cscat` (public)
+- [x] GH Actions secret `VITE_WEBHOOK_URL` set
+- [x] GH Pages enabled (source: GitHub Actions)
+- [x] Live: https://robgilto.github.io/cscat/
+- [x] End-to-end browser submit → 200 → row in DataSet
+- [x] CORS workaround: `mode: 'no-cors'` + `Content-Type: text/plain` skips preflight
+
+### Known constraints
+- Connector does not auto-materialize on POST. Schedule a run interval (15 min recommended) on DataSet settings, or manual Run.
+- `no-cors` mode = fire-and-forget, app cannot detect server failure. Acceptable for pilot. Cloudflare Worker proxy needed for real error handling.
+
+### Phase 3.5 — Paul feedback round 1 (DONE 2026-05-22)
+- [x] Added `contact_name` URL param → survey greets "Hi {name}," above intro
+- [x] Builder: new "Customer contact name" input; greeting prefers contact name → fallback "Hi {account} team," → fallback "Hi,"
+- [x] Logo white rounded box on blue band (survey + builder + email `<img>`) — fixes blue-on-blue blend
+- [x] New DataSet `apac_csat_responses_v2` (ID `eee8618f-7a29-49b0-bb45-4357150ffd74`) w/ `customer_contact_name` column
+- [x] New webhook URL rotated into GH secret `VITE_WEBHOOK_URL` + `.env.local`
+- [x] v1 DataSet `9c5e6633-...` deprecated (schema missed contact_name)
+- [x] curl smoke test + end-to-end Playwright submit from live GH Pages → row lands in v2 w/ all fields incl. `customer_contact_name=Robert`
+- [x] Commits: `1fa9c8d` (code) — pushed main, GH Pages redeployed
+
+### Phase 3.6 — Domo custom app port (IN PROGRESS 2026-05-27)
+- [x] Scaffold `builder-app/` via `da new builder-app -p npm` (Vite + React 18 + TS + @domoinc/vite-react-template)
+- [x] Strip Counter + Redux scaffold (not needed for pure UI)
+- [x] Port `builder.html` → `src/components/App/App.tsx` (React + useMemo/useState, clipboard fallback via execCommand)
+- [x] Logo asset bundled (`public/static/domo-logo.png`)
+- [x] `manifest.json` set: name="CSAT Link Builder", fullpage=true, size 8x12, no datasets/AppDB
+- [x] `vite build` clean — 8.75 KB app + 140 KB vendor (gzip ~48 KB)
+- [x] Local Playwright test: filled state renders, URL builds, greeting fallback works
+- [x] Removed interactive `da apply-manifest` prebuild/prestart hooks (block headless build)
+- [x] `domo login domo.domo.com` + `domo publish` (run from `builder-app/build/`) — design `142385af-c336-4e64-98ea-dc4f22d6468f`
+- [x] Copy design `id` from `build/manifest.json` → `public/manifest.json` (first-publish gotcha)
+- [x] Page on domo.domo created — pageId `1915629533` "CSAT Link Builder"
+- [x] Logo: nested-table white card pattern (Gmail/Outlook safe); 120px wide
+- [x] Clipboard rich-HTML fallback: contenteditable + execCommand when ClipboardItem fails
+- [x] **GH Pages `builder.html` removed** — builder now lives only on domo.domo
+- [ ] Add card to page via Domo UI (Send to... from asset library)
+- [ ] Share page with Paul + APAC team
+
+### Phase 4 — Reporting
+- [ ] Build summary card: avg per question
+- [ ] Trend card: monthly avg
+- [ ] Breakdown card: by project / account
+- [ ] Dashboard for Paul
+
+### Phase 5 — Pilot
+- [ ] Pick 2-3 recently closed APAC projects
+- [ ] Manually generate URL with shortener (bit.ly)
+- [ ] Send via Paul's email template
+- [ ] Gather submission feedback (UX issues, mobile, etc.)
+- [ ] Iterate
+
+### Phase 6 — Rollout
+- [ ] Build Asana-driven URL generator script
+- [ ] Request `csat.domo.com` CNAME from Domo IT
+- [ ] Document process for Paul + APAC team
+- [ ] Hand off
+
+## Open Items / Future
+- Token-per-link to prevent duplicate submissions (skipped for MVP)
+- Anonymous vs attributed — currently captures contact only via URL param, not authenticated
+- Email automation — Paul sends manually for now; could fire from Domo Workflow on project close
+- Multi-language support if customer base expands
+
+## Sync State
+
+| Field | Value |
+|---|---|
+| **Last Asana Sync** | 2026-05-01 14:40 |
+| **Asana Status** | open, unscheduled |
+| **Last Outbound** | — |
+| **Last Inbound** | 2026-05-21 — Paul Basterfield feedback (logo border, contact name, host on domo.domo) |
+| **Active DataSet** | `apac_csat_responses_v3` — ID `e93fb8f0-da20-413c-b95c-2dd4a57d8d69` |
+| **Last E2E Test** | 2026-05-22 — live GH Pages submit, row landed in v2 |
+| **Pending feedback** | Host link builder on domo.domo (custom app port) — Phase 3.6 in progress, awaiting `domo publish` |
+| **Builder app path** | `builder-app/` — Domo Pro Code app, builds clean |
